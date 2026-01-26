@@ -8,7 +8,6 @@
   <img src="https://img.shields.io/badge/FastAPI-Backend-green?style=flat-square&logo=fastapi">
   <img src="https://img.shields.io/badge/Streamlit-Frontend-red?style=flat-square&logo=streamlit">
   <img src="https://img.shields.io/badge/GenAI-LLM-yellow?style=flat-square&logo=openai">
-  <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square">
 </p>
 
 ---
