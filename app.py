@@ -2,9 +2,12 @@ import streamlit as st
 import requests
 import uuid
 import time
+import os
 
-# --- Configuration ---
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv(
+    "BACKEND_URL",
+    "https://ai-trip-planner-ytay.onrender.com"
+)
 
 st.set_page_config(page_title="🌍 AI Trip Planner", page_icon="✈️", layout="wide")
 
