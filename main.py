@@ -6,88 +6,234 @@ from langchain_core.messages import HumanMessage
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from typing import Dict, List, Optional
 import uuid
 
 load_dotenv()
-
-# DEBUG: Check if keys are actually loading
-print(f"DEBUG: GROQ Key found? {os.getenv('GROQ_API_KEY') is not None}")
-print(f"DEBUG: TAVILY Key found? {os.getenv('TAVILY_API_KEY') is not None}")
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # set specific origins in prod
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- 1. Initialize Graph ONCE at startup ---
+# --- 1. Initialize Graph ---
 try:
-    # Initialize the builder once
     graph_builder = GraphBuilder(model_provider="groq")
-    react_app = graph_builder() # Compile the graph
-    
-    # Optional: Save the graph image only once on startup, not every request
-    try:
-        png_graph = react_app.get_graph().draw_mermaid_png()
-        with open("travel_agent_graph.png", "wb") as f:
-            f.write(png_graph)
-        print("Graph visualization saved to travel_agent_graph.png")
-    except Exception as img_e:
-        print(f"Could not save graph image (requires graphviz): {img_e}")
-
+    react_app = graph_builder() 
 except Exception as e:
     print(f"CRITICAL ERROR: Could not initialize AI Graph: {e}")
     react_app = None
 
+# --- 2. In-Memory Storage ---
+# Added 'latest_plan' to store the most recent itinerary text
+rooms = {}
+
+# --- 3. Pydantic Models ---
 class QueryRequest(BaseModel):
     question: str
-    thread_id: str = None # Optional: Allow client to send a session ID
+    thread_id: Optional[str] = None
 
+class CreateRoomRequest(BaseModel):
+    host_name: str
+
+class JoinRoomRequest(BaseModel):
+    room_code: str
+    user_name: str
+
+class PreferenceSubmission(BaseModel):
+    room_code: str
+    user_name: str
+    preferences: Dict 
+
+class GeneratePlanRequest(BaseModel):
+    room_code: str
+
+class GroupChatRequest(BaseModel):
+    room_code: str
+    user_name: str
+    message: str
+
+# --- 4. Endpoints ---
+
+@app.post("/create-room")
+def create_room(req: CreateRoomRequest):
+    room_code = str(uuid.uuid4())[:6].upper()
+    rooms[room_code] = {
+        "users": [req.host_name],
+        "preferences": [],
+        "status": "waiting",
+        "chat_history_thread": str(uuid.uuid4()), # Shared memory ID for this group
+        "latest_plan": None # Stores the current text of the plan
+    }
+    return {"room_code": room_code, "message": "Room created"}
+
+@app.post("/join-room")
+def join_room(req: JoinRoomRequest):
+    if req.room_code not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if req.user_name not in rooms[req.room_code]["users"]:
+        rooms[req.room_code]["users"].append(req.user_name)
+    return {"message": "Joined successfully"}
+
+@app.get("/room-status/{room_code}")
+def get_room_status(room_code: str):
+    if room_code not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return rooms[room_code]
+
+@app.post("/submit-preferences")
+def submit_preferences(sub: PreferenceSubmission):
+    if sub.room_code not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Update logic
+    rooms[sub.room_code]["preferences"] = [
+        p for p in rooms[sub.room_code]["preferences"] if p["user"] != sub.user_name
+    ]
+    rooms[sub.room_code]["preferences"].append({
+        "user": sub.user_name,
+        "data": sub.preferences
+    })
+    return {"message": "Preferences received"}
+
+# --- HELPER: Common function to talk to AI ---
+async def ask_agent(prompt: str, thread_id: str):
+    if react_app is None:
+        raise Exception("AI Agent not initialized")
+    
+    config = {"configurable": {"thread_id": thread_id}}
+    input_message = HumanMessage(content=prompt)
+    output = await react_app.ainvoke({"messages": [input_message]}, config=config)
+    
+    if isinstance(output, dict) and "messages" in output:
+        return output["messages"][-1].content
+    return str(output)
+
+@app.post("/generate-group-plan")
+async def generate_group_plan(req: GeneratePlanRequest):
+    """Initial generation of the plan."""
+    if req.room_code not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = rooms[req.room_code]
+    prefs = room["preferences"]
+    
+    if not prefs:
+        raise HTTPException(status_code=400, detail="No preferences submitted yet.")
+
+        # --- Construct the Conflict Resolution Prompt ---
+    diplomat_prompt = (
+        "Act as a travel diplomat and expert planner for a group of friends. "
+        "Here are the conflicting preferences from the group members:\n\n"
+    )
+    
+    for p in prefs:
+        user = p['user']
+        data = p['data']
+        diplomat_prompt += f"- User {user}: Wants {data.get('destination', 'Anywhere')}, Interest: {data.get('vibe', 'Any')}, Budget: {data.get('budget', 'Flexible')}\n"
+
+    diplomat_prompt += (
+    "\nTASK:\n"
+    "You are an AI travel diplomat responsible for creating a fair, transparent, and detailed travel plan "
+    "for multiple people with possibly conflicting preferences.\n\n"
+
+    "1. Analyze all user requests and preferences. "
+    "If there are contradictions (e.g., 'Snow' vs 'Beach', 'Luxury' vs 'Budget'), "
+    "propose one or more fair solutions such as:\n"
+    "   - A multi-destination or split itinerary\n"
+    "   - Nearby locations that satisfy both preferences\n"
+    "   - A best-compromise plan based on majority preference\n\n"
+
+    "2. Create a DAY-WISE detailed itinerary including:\n"
+    "   - Locations covered each day\n"
+    "   - Activities with approximate timing\n"
+    "   - Travel mode between places\n\n"
+
+    "3. For EACH major component (Hotels, Travel, Activities), provide MULTIPLE OPTIONS:\n"
+    "   - Budget Option\n"
+    "   - Mid-Range Option\n"
+    "   - Premium Option\n\n"
+
+    "4. HOTEL OPTIONS:\n"
+    "   - Suggest at least 2-3 hotels per destination\n"
+    "   - Mention hotel name, star rating, location\n"
+    "   - Price per night per person in ₹ (INR)\n"
+    "   - Booking platforms (e.g., MakeMyTrip, Booking.com, Agoda)\n\n"
+
+    "5. TRAVEL OPTIONS:\n"
+    "   - Intercity travel (Flight / Train / Bus / Cab)\n"
+    "   - Mention provider name (e.g., IRCTC, Indigo, Vistara, RedBus, Uber Intercity)\n"
+    "   - Approximate cost per person\n\n"
+
+    "6. ACTIVITIES & ATTRACTIONS:\n"
+    "   - Mention specific attractions, parks, experiences\n"
+    "   - Entry fees or activity cost per person\n"
+    "   - Optional alternatives where applicable\n\n"
+
+    "7. COST BREAKDOWN:\n"
+    "   - Per-person cost breakdown (Hotels, Travel, Activities, Food, Misc.)\n"
+    "   - Total group cost\n"
+    "   - Separate totals for Budget / Mid-Range / Premium plans\n\n"
+
+    "8. VOTING SUMMARY PER OPTION:\n"
+    "   - For each major option (hotel tier, travel mode, itinerary style), "
+    "     summarize how many participants are satisfied or prefer it\n"
+    "   - Present this as a simple table or bullet summary\n"
+    "   - Clearly identify the option with the highest overall acceptance\n\n"
+
+    "9. RISK ALERTS & CONSIDERATIONS:\n"
+    "   - Weather risks (rain, snowfall, heatwaves, humidity)\n"
+    "   - Crowd risk (peak season, festivals, weekends)\n"
+    "   - Seasonal limitations (closures, restricted access, surge pricing)\n"
+    "   - Provide mitigation tips or safer alternatives where possible\n\n"
+
+    "10. FAIRNESS JUSTIFICATION:\n"
+    "   - Explain clearly why the final recommended plan is fair for all participants\n"
+    "   - Mention how conflicting preferences are balanced\n\n"
+
+    "11. ASSUMPTIONS & FLEXIBILITY:\n"
+    "   - Mention assumptions made (season, availability, pricing variability)\n"
+    "   - Clearly state that prices are approximate and subject to change\n"
+    )
+
+    # Call AI
+    plan_text = await ask_agent(diplomat_prompt, room["chat_history_thread"])
+    
+    # SAVE the plan to the room so everyone sees it
+    room["latest_plan"] = plan_text
+    
+    return {"answer": plan_text}
+
+@app.post("/chat-group")
+async def chat_group(req: GroupChatRequest):
+    """Follow-up chat to refine the plan."""
+    if req.room_code not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    room = rooms[req.room_code]
+    
+    # Construct a prompt that includes who is asking
+    context_prompt = f"User '{req.user_name}' says: {req.message}. Update the plan accordingly."
+    
+    # Call AI with the SAME thread_id to maintain context
+    updated_plan = await ask_agent(context_prompt, room["chat_history_thread"])
+    
+    # Update the shared plan
+    room["latest_plan"] = updated_plan
+    
+    return {"answer": updated_plan}
+
+# --- Solo Chat Endpoint ---
 @app.post("/query")
 async def query_travel_agent(query: QueryRequest):
-    if react_app is None:
-        return JSONResponse(status_code=500, content={"error": "AI Agent failed to initialize."})
-
     try:
-        print(f"Received Query: {query.question}")
-        
-        # --- 2. Manage Thread ID for Memory ---
-        # If the user provides a thread_id, use it. If not, generate a new one.
-        # Note: To fully support memory, your GraphBuilder must have checkpointer enabled.
         thread_id = query.thread_id or str(uuid.uuid4())
-        
-        config = {"configurable": {"thread_id": thread_id}}
-
-        # --- 3. Construct Proper Message ---
-        # Using HumanMessage is safer than raw strings
-        input_message = HumanMessage(content=query.question)
-        
-        # Invoke the graph
-        # We pass the new message. The graph (if checkpointed) handles history.
-        output = await react_app.ainvoke({"messages": [input_message]}, config=config)
-
-        # Extract response
-        if isinstance(output, dict) and "messages" in output:
-            final_output = output["messages"][-1].content
-        else:
-            final_output = str(output)
-        
-        return {
-            "answer": final_output,
-            "thread_id": thread_id # Return the ID so the frontend can send it back next time
-        }
-
+        answer = await ask_agent(query.question, thread_id)
+        return {"answer": answer, "thread_id": thread_id}
     except Exception as e:
-        # Print full trace for debugging in console
-        import traceback
-        traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-# Health check endpoint
-@app.get("/health")
-def health_check():
-    return {"status": "active", "agent_loaded": react_app is not None}

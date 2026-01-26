@@ -1,128 +1,107 @@
-<h1 align="center">🌍 AI Trip Planner</h1>
+<h1 align="center">🌍 AI Trip Planner & Group Diplomat</h1>
 <p align="center">
-  <i>Your intelligent travel companion — plan smarter, travel better.</i><br>
+  <i>Plan smarter, travel better, and stop fighting over the itinerary.</i><br>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-blue?style=flat-square&logo=python">
-  <img src="https://img.shields.io/badge/FastAPI-Framework-green?style=flat-square&logo=fastapi">
-  <img src="https://img.shields.io/badge/AWS-Cloud-orange?style=flat-square&logo=amazonaws">
-  <img src="https://img.shields.io/badge/OAuth-2.0-blueviolet?style=flat-square&logo=auth0">
-  <img src="https://img.shields.io/badge/NLP-GenAI-yellow?style=flat-square&logo=openai">
-  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square">
+  <img src="https://img.shields.io/badge/FastAPI-Backend-green?style=flat-square&logo=fastapi">
+  <img src="https://img.shields.io/badge/Streamlit-Frontend-red?style=flat-square&logo=streamlit">
+  <img src="https://img.shields.io/badge/GenAI-LLM-yellow?style=flat-square&logo=openai">
+  <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square">
 </p>
 
-  
+---
+
+## 🧭 Introduction
+
+**AI Trip Planner** is a next-generation travel assistant designed to solve the two biggest headaches in travel: **planning hours** and **group conflicts**.
+
+Traditional planning is fragmented. Group trips are worse—endless group chats, conflicting budgets, and "I don't care, you decide" attitudes. This application solves both using **Generative AI** and a **Real-Time Lobby System**.
+
+Whether you are a solo backpacker or a group of six with completely different budgets, our **AI Diplomat** analyzes everyone's preferences to mathematically find the perfect compromise itinerary.
 
 ---
 
-## 🧭 Introduction  
+## 🌟 Key Features
 
-**Gen AI-driven Itinerary Planner** is an advanced **AI-powered travel assistant** designed to make trip planning effortless, efficient, and personalized.  
+### 🤝 **NEW: Multi-User Collaboration ("The Lobby")**
+Stop the group chat chaos.
+- **Invite Friends:** Create a room code and invite friends to join your live lobby.
+- **Real-Time Voting:** Each user privately submits their budget, preferred vibe (Party vs. Relax), and interests.
+- **The AI Diplomat:** Our algorithm aggregates conflicting data (e.g., "Low Budget" vs. "Luxury") and generates a **single, unbiased itinerary** that acts as a fair compromise.
+- **Group Chat:** Discuss and refine the plan live with the AI after it's generated.
 
-Traditional travel planning demands hours of research and constant adjustments due to flight changes, weather, or event schedules. This intelligent system simplifies that entire process through **automation and real-time adaptability**.  
+### 🧠 **Intelligent Personalization**
+- Understands natural language (e.g., *"Plan a romantic getaway to Paris, but keep it under ₹1.5 Lakh"*).
+- tailor-made day-wise itineraries including hotels, restaurants, and hidden gems.
 
-Powered by **Python** and **FastAPI**, the planner delivers secure authentication, seamless connectivity, and scalable deployment on **AWS Cloud**.  
+### ⚡ **Real-Time Adaptability**
+- **Dynamic Replanning:** Ask the AI to change plans on the fly (e.g., *"It's raining, give us indoor options for today"*).
+- **Currency Localization:** automatically handles costs in your local currency (₹ INR).
 
-Users can provide preferences such as:  
-- 🌆 Destination  
-- 💰 Budget  
-- 📅 Travel Dates  
-- 🎯 Interests (Adventure, Culture, Relaxation, etc.)  
-
-The system then generates a **customized travel itinerary**, intelligently optimized for time, cost, and experience.  
-
----
-
-## 💡 Key Features  
-
-- 🧠 **AI-Powered Personalization:**  
-  Understands user intent and generates tailored travel itineraries using natural language queries.  
-
-- 💬 **Conversational Planning (NLP):**  
-  Users can simply say, *“Plan a seven-day trip to Italy,”* and receive a detailed itinerary instantly.  
-
-- ⚡ **Real-Time Adaptability:**  
-  Automatically updates itineraries for **flight delays, weather changes, or local events**, ensuring smooth travel experiences.  
-
-- 🔒 **Secure Authentication:**  
-  Implements **OAuth 2.0** for secure user access and data protection.  
-
-- ☁️ **Cloud Hosting (AWS):**  
-  Ensures scalability, performance, and data reliability through cloud infrastructure.  
-
-- 🔄 **Integration Support:**  
-  Modular architecture supports easy integration with **existing travel management systems** or **corporate travel dashboards**.  
+### 🔒 **Secure & Scalable**
+- Built on **FastAPI** for high-performance async processing.
+- Scalable architecture ready for **AWS Cloud** deployment.
 
 ---
 
-## 🧩 Tech Stack  
+## 🧩 Tech Stack
 
-| Category | Technology |
+| Component | Technology |
 |-----------|-------------|
-| **Backend Framework** | FastAPI |
-| **Programming Language** | Python |
-| **Authentication** | OAuth 2.0 |
-| **Hosting / Deployment** | AWS Cloud |
-| **AI/NLP** | OpenAI / Hugging Face Transformers |
-| **Database (optional)** | PostgreSQL / DynamoDB |
-| **Frontend (if applicable)** | HTML, CSS, JavaScript |
+| **Frontend** | Streamlit (Python-based UI) |
+| **Backend** | FastAPI (High-performance API) |
+| **AI Agents** | LangGraph / LangChain |
+| **LLM Provider** | Groq / OpenAI |
+| **Real-Time State** | Python Async / Session State |
+| **Deployment** | Docker / AWS |
 
 ---
 
-## ⚙️ How It Works  
+## ⚙️ How It Works
 
-1. **User Input:**  
-   The user provides details like destination, budget, travel dates, and interests.  
+### 1. **The Lobby (Group Mode)**
+1.  **Host** creates a room and shares the unique **Room Code**.
+2.  **Friends** join via their own devices using the code.
+3.  Everyone submits their individual preferences (Budget, Vibe, Destination).
+4.  The **AI Diplomat** processes all inputs to find the intersection of interests.
 
-2. **AI Processing:**  
-   The system uses **Natural Language Processing (NLP)** and **Generative AI** models to interpret preferences.  
+### 2. **The Generation (AI Core)**
+1.  The backend aggregates the data (e.g., *3 users want "Party", 1 wants "History"*).
+2.  The LLM generates a mathematically weighted plan.
+3.  The final itinerary is broadcasted to all screens simultaneously.
 
-3. **Itinerary Generation:**  
-   Generates a day-by-day travel plan optimized for time, cost, and user satisfaction.  
-
-4. **Real-Time Updates:**  
-   Integrates live APIs for flight, weather, and event updates to dynamically adjust itineraries.  
-
-5. **Response Delivery:**  
-   Displays or emails the personalized travel itinerary to the user.  
-
----
-
-## 🔐 Security  
-
-- Uses **OAuth 2.0** for authentication.  
-- All user data is encrypted during transmission and storage.  
-- Deployed on **AWS** for secure and scalable performance.  
+### 3. **The Refinement**
+1.  Users can chat with the plan: *"Change dinner on Day 2 to something cheaper."*
+2.  The plan updates in real-time for the whole group.
 
 ---
 
-## 📦 Installation  
+## 📦 Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/PavanKumar1207/AI_Trip_Planner.git
-
-# Navigate to the directory
+# 1. Clone the repository
+git clone [https://github.com/rpsahu12/AI_Trip_Planner.git](https://github.com/rpsahu12/AI_Trip_Planner.git)
 cd AI_Trip_Planner
 
-# Create virtual environment
+# 2. Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
+# Windows:
+venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
 
-# Install dependencies
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# Run the FastAPI server
+# 4. Set up Environment Variables (.env)
+# Create a .env file and add your API keys:
+# GROQ_API_KEY=your_key_here
+# TAVILY_API_KEY=your_key_here
+
+# 5. Run the Backend (FastAPI)
 uvicorn main:app --reload
-```
----
 
-## 🧠 Future Enhancements
-
-- Integration with **Google Maps API** for navigation routes.  
-- **Chatbot interface** for real-time itinerary modification.  
-- Support for **multi-user collaboration** (family/friends planning together).  
-- AI-based **cost optimization engine** for flights and stays.  
-
-
+# 6. Run the Frontend (Streamlit) (New Terminal)
+streamlit run app.py
