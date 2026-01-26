@@ -56,28 +56,69 @@ st.sidebar.title("✈️ Navigator")
 mode = st.sidebar.radio("Choose Mode:", ["🤖 Solo Chat", "👥 Group Planner"])
 
 # ==========================================
-# MODE 1: SOLO CHAT
+# MODE 1: SOLO CHAT (Updated)
 # ==========================================
 if mode == "🤖 Solo Chat":
     st.title("🤖 Personal Travel Agent")
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    st.caption("Plan your trip, then chat to modify it.")
 
-    if prompt := st.chat_input("Plan a trip..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    res = requests.post(f"{BASE_URL}/query", json={"question": prompt, "thread_id": st.session_state.thread_id})
-                    if res.status_code == 200:
-                        ans = res.json()["answer"]
-                        st.markdown(ans)
-                        st.session_state.messages.append({"role": "assistant", "content": ans})
-                except Exception as e:
-                    st.error(str(e))
+    # Initialize solo plan state
+    if "solo_plan" not in st.session_state:
+        st.session_state.solo_plan = None
+
+    # --- LAYOUT: Two Tabs (Plan vs Chat) ---
+    tab_plan, tab_chat = st.tabs(["📄 Current Itinerary", "💬 Discuss & Modify"])
+
+    # TAB 1: The Plan View
+    with tab_plan:
+        if st.session_state.solo_plan:
+            st.markdown(st.session_state.solo_plan)
+        else:
+            st.info("👋 Tell me where you want to go in the Chat tab to generate a plan!")
+
+    # TAB 2: The Chat Interface
+    with tab_chat:
+        # Display History
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat Input
+        if prompt := st.chat_input("Where to? (e.g. 'Goa for 3 days') or Modify ('Change hotel')"):
+            
+            # 1. Show User Message
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # 2. Call Backend
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        payload = {
+                            "question": prompt,
+                            "thread_id": st.session_state.thread_id
+                        }
+                        response = requests.post(f"{BASE_URL}/query", json=payload)
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            answer = data.get("answer", "No answer.")
+                            latest_plan = data.get("latest_plan") # Get updated plan
+                            
+                            # Update the Plan Tab if a new plan came back
+                            if latest_plan:
+                                st.session_state.solo_plan = latest_plan
+                                st.toast("Itinerary Updated! Check the first tab.", icon="📄")
+                            
+                            # Show Answer in Chat
+                            st.markdown(answer)
+                            st.session_state.messages.append({"role": "assistant", "content": answer})
+                        else:
+                            st.error(f"Error {response.status_code}: {response.text}")
+                    
+                    except Exception as e:
+                        st.error(f"Connection Error: {str(e)}")
 
 # ==========================================
 # MODE 2: GROUP PLANNER
