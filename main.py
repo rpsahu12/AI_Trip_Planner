@@ -229,11 +229,35 @@ async def chat_group(req: GroupChatRequest):
     return {"answer": updated_plan}
 
 # --- Solo Chat Endpoint ---
+solo_sessions = {} 
+
 @app.post("/query")
 async def query_travel_agent(query: QueryRequest):
     try:
         thread_id = query.thread_id or str(uuid.uuid4())
-        answer = await ask_agent(query.question, thread_id)
-        return {"answer": answer, "thread_id": thread_id}
+        
+        # Initialize session if new
+        if thread_id not in solo_sessions:
+            solo_sessions[thread_id] = {"latest_plan": None}
+            
+        # Contextual Prompt: If a plan exists, remind the AI to update it
+        current_plan = solo_sessions[thread_id]["latest_plan"]
+        final_prompt = query.question
+        
+        if current_plan and "plan" not in query.question.lower():
+             final_prompt = f"Current Plan: {current_plan}\n\nUser Request: {query.question}\n\nTask: Update the plan based on the request."
+
+        # Call AI
+        answer = await ask_agent(final_prompt, thread_id)
+        
+        # Update the stored plan if the answer looks like an itinerary
+        if "Day 1" in answer or "Itinerary" in answer:
+            solo_sessions[thread_id]["latest_plan"] = answer
+            
+        return {
+            "answer": answer, 
+            "thread_id": thread_id,
+            "latest_plan": solo_sessions[thread_id]["latest_plan"] # Return plan separately
+        }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
