@@ -172,7 +172,7 @@ elif mode == "👥 Group Planner":
             if not st.session_state.shared_plan:
                 st.subheader("📝 Submit Preferences")
                 with st.form("prefs"):
-                    dest = st.text_input("Destination", "Anywhere")
+                    dest = st.text_input("Destination", "Where to? (e.g. 'plan a beach trip to Goa for 3 days')")
                     vibe = st.selectbox("Vibe", ["Relaxing", "Party", "Adventure", "Culture"])
                     budget = st.slider("Budget (INR)", 5000, 200000, 10000)
                     if st.form_submit_button("Submit"):
