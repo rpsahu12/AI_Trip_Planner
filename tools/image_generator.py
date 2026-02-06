@@ -5,7 +5,7 @@ import time
 class TripVisualizer:
     def __init__(self):
         # We use the API instead of loading the model locally
-        self.api_url = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+        self.api_url = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
         self.api_key = os.getenv("HF_TOKEN") # <--- You need to set this in .env
         self.headers = {"Authorization": f"Bearer {self.api_key}"}
 
