@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import base_url
 from agent.agentic_workflow import GraphBuilder
 from starlette.responses import JSONResponse
 from langchain_core.messages import HumanMessage
@@ -328,7 +327,7 @@ async def query_travel_agent(query: QueryRequest):
                 # 4. CRITICAL WINDOWS FIX: Convert backslashes to forward slashes for URL
                 # Windows paths are "static\images\...", but URLs must be "static/images/..."
                 clean_path = image_path.replace("\\", "/")
-                
+
                 base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
                 image_url = f"{base_url}/{clean_path}"
                 
