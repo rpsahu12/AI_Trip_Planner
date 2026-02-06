@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from openai import base_url
 from agent.agentic_workflow import GraphBuilder
 from starlette.responses import JSONResponse
 from langchain_core.messages import HumanMessage
@@ -8,6 +9,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 import uuid
+import asyncio
+from fastapi.staticfiles import StaticFiles
+from tools.image_generator import TripVisualizer
+import re
 
 load_dotenv()
 
@@ -20,6 +25,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("static/images", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# --- NEW: Initialize the Visualizer ---
+# We init it here, but the heavy model loads only when first used
+visualizer = TripVisualizer()
 
 # --- 1. Initialize Graph ---
 try:
@@ -126,6 +138,9 @@ async def generate_group_plan(req: GeneratePlanRequest):
     if not prefs:
         raise HTTPException(status_code=400, detail="No preferences submitted yet.")
 
+    destinations = [p['data'].get('destination', 'Unknown') for p in prefs]
+    main_destination = next((d for d in destinations if d and d != "Unknown"), "Dream Vacation")
+
         # --- Construct the Conflict Resolution Prompt ---
     diplomat_prompt = (
         "Act as a travel diplomat and expert planner for a group of friends. "
@@ -203,11 +218,33 @@ async def generate_group_plan(req: GeneratePlanRequest):
 
     # Call AI
     plan_text = await ask_agent(diplomat_prompt, room["chat_history_thread"])
+
+    print(f"🎨 Starting image generation for: {main_destination}")
+    
+    # Run image gen in a separate thread so it doesn't block the server
+    image_task = asyncio.to_thread(visualizer.generate_image, main_destination)
+    ai_task = ask_agent(diplomat_prompt, room["chat_history_thread"])
+
+    # Wait for both to finish
+    image_path, plan_text = await asyncio.gather(image_task, ai_task)
+
+    # 2. NEW: Generate Map Coordinates based on the Plan Text
+    # We run this in a thread to keep the server responsive
+    try:
+        print("🗺️ Generating Map Coordinates...")
+        map_data = await asyncio.to_thread(graph_builder.convert_to_coordinates, plan_text)
+        map_json = map_data.dict() # Convert Pydantic model to Dict
+    except Exception as e:
+        print(f"⚠️ Map generation failed: {e}")
+        map_json = None
+        
+    # Convert local path to URL (assuming local dev)
+    image_url = f"http://localhost:8000/{image_path}" if image_path else None
     
     # SAVE the plan to the room so everyone sees it
     room["latest_plan"] = plan_text
     
-    return {"answer": plan_text}
+    return {"answer": plan_text, "image_url": image_url, "map_data": map_json}
 
 @app.post("/chat-group")
 async def chat_group(req: GroupChatRequest):
@@ -226,7 +263,17 @@ async def chat_group(req: GroupChatRequest):
     # Update the shared plan
     room["latest_plan"] = updated_plan
     
-    return {"answer": updated_plan}
+    try:
+        map_data = await asyncio.to_thread(graph_builder.convert_to_coordinates, updated_plan)
+        map_json = map_data.dict()
+    except Exception as e:
+        print(f"⚠️ Map update failed: {e}")
+        map_json = None
+    
+    return {
+        "answer": updated_plan,
+        "map_data": map_json
+    }
 
 # --- Solo Chat Endpoint ---
 solo_sessions = {} 
@@ -240,24 +287,80 @@ async def query_travel_agent(query: QueryRequest):
         if thread_id not in solo_sessions:
             solo_sessions[thread_id] = {"latest_plan": None}
             
-        # Contextual Prompt: If a plan exists, remind the AI to update it
+        # Contextual Prompt
         current_plan = solo_sessions[thread_id]["latest_plan"]
         final_prompt = query.question
         
         if current_plan and "plan" not in query.question.lower():
              final_prompt = f"Current Plan: {current_plan}\n\nUser Request: {query.question}\n\nTask: Update the plan based on the request."
 
-        # Call AI
+        # --- IMPROVED: Image Generation Trigger ---
+        image_url = None
+        
+        # Heuristic: Check for keywords to trigger image generation
+        trigger_keywords = ["plan", "trip", "itinerary", "visit", "go to", "travel"]
+        
+        if any(k in query.question.lower() for k in trigger_keywords):
+            
+            # 1. Cleaning Logic: Remove common phrases to isolate the location
+            # This removes "plan a trip to", "i want to visit", etc. (Case Insensitive)
+            clean_query = re.sub(
+                r"(plan a trip to|plan a trip|i want to visit|show me|itinerary for|go to|travel to)", 
+                "", 
+                query.question, 
+                flags=re.IGNORECASE
+            )
+            
+            # 2. Cleanup: Remove punctuation like '?' and extra spaces
+            # Example: "Tokyo?" -> "Tokyo"
+            location_guess = clean_query.strip().strip("?.!").split(" ")[0]
+            
+            # Fallback: If parsing failed (result is empty), use a safe default
+            if len(location_guess) < 2: 
+                location_guess = "Dream_Destination"
+
+            print(f"🎨 Generating solo image for: {location_guess}")
+            
+            # 3. Generate Image (Wrapped in try/except to prevent crashing)
+            try:
+                image_path = await asyncio.to_thread(visualizer.generate_image, location_guess)
+                
+                # 4. CRITICAL WINDOWS FIX: Convert backslashes to forward slashes for URL
+                # Windows paths are "static\images\...", but URLs must be "static/images/..."
+                clean_path = image_path.replace("\\", "/")
+                
+                base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+                image_url = f"{base_url}/{clean_path}"
+                
+            except Exception as img_err:
+                print(f"⚠️ Image generation failed: {img_err}")
+                image_url = None
+
+        # Call AI Agent (Text)
         answer = await ask_agent(final_prompt, thread_id)
         
         # Update the stored plan if the answer looks like an itinerary
         if "Day 1" in answer or "Itinerary" in answer:
             solo_sessions[thread_id]["latest_plan"] = answer
-            
+
+        # 2. NEW: Generate Map Coordinates
+        map_json = None
+        # Only try to make a map if we actually have a plan in the answer
+        if "Day 1" in answer or "Itinerary" in answer:
+            try:
+                map_data = await asyncio.to_thread(graph_builder.convert_to_coordinates, answer)
+                map_json = map_data.dict()
+            except Exception as e:
+                print(f"⚠️ Map generation failed: {e}")
+
         return {
             "answer": answer, 
             "thread_id": thread_id,
-            "latest_plan": solo_sessions[thread_id]["latest_plan"] # Return plan separately
+            "latest_plan": solo_sessions[thread_id]["latest_plan"],
+            "image_url": image_url,
+            "map_data": map_json 
         }
+
     except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})

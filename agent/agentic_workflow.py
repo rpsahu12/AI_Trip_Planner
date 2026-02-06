@@ -9,6 +9,8 @@ from tools.weather_info_tool import WeatherInfoTool
 from tools.place_search_tool import PlaceSearchTool
 from tools.expense_calculator_tool import CalculatorTool
 from tools.currency_conversion_tool import CurrencyConvertorTool
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 class GraphBuilder:
     def __init__(self, model_provider: str = "groq"):
@@ -85,3 +87,26 @@ class GraphBuilder:
 
     def __call__(self):
         return self.build_graph()
+    def convert_to_coordinates(self, itinerary_text: str):
+        """
+        Takes the text plan from the agent and converts it to coordinates
+        using a structured LLM call.
+        """
+        # Create a specialized LLM just for formatting
+        structured_llm = self.llm.with_structured_output(TripItinerary)
+        
+        # Invoke it with the text
+        return structured_llm.invoke(itinerary_text)
+
+# --- Map Data Structures ---
+class ItineraryLocation(BaseModel):
+    name: str = Field(description="Name of the location, hotel, or landmark")
+    description: str = Field(description="One sentence description of why to visit")
+    latitude: float = Field(description="The latitude of the location")
+    longitude: float = Field(description="The longitude of the location")
+    type: str = Field(description="Type of location: 'hotel', 'restaurant', or 'activity'")
+
+class TripItinerary(BaseModel):
+    trip_title: str = Field(description="A catchy title for the trip")
+    locations: List[ItineraryLocation]
+# ---------------------------

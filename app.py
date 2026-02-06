@@ -3,11 +3,55 @@ import requests
 import uuid
 import time
 import os
+import folium
+from streamlit_folium import st_folium
 
 BASE_URL = os.getenv(
     "BACKEND_URL",
     "https://ai-trip-planner-ytay.onrender.com"
 )
+
+# --- NEW: Map Helper Function ---
+def display_map(map_data):
+    """
+    Helper function to render the map from the backend JSON.
+    """
+    if not map_data or "locations" not in map_data:
+        return
+
+    locations = map_data["locations"]
+    if not locations:
+        return
+
+    # 1. Center the map on the first location
+    start_lat = locations[0]["latitude"]
+    start_lon = locations[0]["longitude"]
+    m = folium.Map(location=[start_lat, start_lon], zoom_start=12)
+
+    # 2. Draw Markers
+    route_coords = []
+    
+    for loc in locations:
+        lat, lon = loc["latitude"], loc["longitude"]
+        route_coords.append([lat, lon])
+        
+        # Color code: Hotel = Blue, Activity = Red
+        icon_color = "blue" if loc["type"] == "hotel" else "red"
+        icon_icon = "bed" if loc["type"] == "hotel" else "camera"
+
+        folium.Marker(
+            [lat, lon],
+            popup=f"<b>{loc['name']}</b><br>{loc['description']}",
+            tooltip=loc["name"],
+            icon=folium.Icon(color=icon_color, icon=icon_icon, prefix='fa')
+        ).add_to(m)
+
+    # 3. Draw the path connecting the dots
+    folium.PolyLine(route_coords, color="blue", weight=4, opacity=0.7).add_to(m)
+
+    # 4. Render in Streamlit
+    st.subheader("🗺️ Trip Map")
+    st_folium(m, width=700, height=500)
 
 st.set_page_config(page_title="🌍 AI Trip Planner", page_icon="✈️", layout="wide")
 
@@ -23,6 +67,15 @@ if "username" not in st.session_state:
 # We use this to track if a plan exists in the lobby
 if "shared_plan" not in st.session_state:
     st.session_state.shared_plan = None
+if "solo_map" not in st.session_state:
+    st.session_state.solo_map = None  
+if "shared_map" not in st.session_state:
+    st.session_state.shared_map = None 
+
+if "solo_image" not in st.session_state:
+    st.session_state.solo_image = None
+if "shared_image" not in st.session_state:
+    st.session_state.shared_image = None
 
 # --- Helper: Lobby Polling ---
 @st.fragment(run_every=3)
@@ -71,8 +124,19 @@ if mode == "🤖 Solo Chat":
     # LEFT COLUMN: The Plan
     with col1:
         st.subheader("📄 Itinerary")
+
+        if st.session_state.solo_image:
+            st.image(
+                st.session_state.solo_image, 
+                caption="AI Generated Preview", 
+                use_container_width=True  # Updated param name for newer Streamlit
+            )
+
         if st.session_state.solo_plan:
             st.markdown(st.session_state.solo_plan)
+
+            if st.session_state.solo_map:
+                display_map(st.session_state.solo_map)
         else:
             st.info("👈 Use the chat on the right to generate a plan!")
 
@@ -111,9 +175,16 @@ if mode == "🤖 Solo Chat":
                                 data = response.json()
                                 answer = data.get("answer", "No answer.")
                                 latest_plan = data.get("latest_plan")
+                                map_data = data.get("map_data")
+
+                                if data.get("image_url"):
+                                        st.session_state.solo_image = data["image_url"]
                                 
                                 if latest_plan:
                                     st.session_state.solo_plan = latest_plan
+                                    if map_data:
+                                        st.session_state.solo_map = map_data
+
                                     # Force a rerun so the Left Column updates immediately
                                     st.rerun()
                                 
@@ -187,8 +258,17 @@ elif mode == "👥 Group Planner":
                 if users:
                     if st.button("🚀 Generate Plan"):
                         with st.spinner("Negotiating..."):
-                            requests.post(f"{BASE_URL}/generate-group-plan", json={"room_code": st.session_state.room_code})
-                            st.rerun()
+                            resp=requests.post(f"{BASE_URL}/generate-group-plan", json={"room_code": st.session_state.room_code})
+                            if resp.status_code == 200:
+                                # NEW: Save map to session state
+                                data = resp.json()
+
+                                if "image_url" in data:
+                                    st.session_state.shared_image = data["image_url"]
+
+                                if "map_data" in data:
+                                    st.session_state.shared_map = data["map_data"]
+                                st.rerun()
 
             # IF PLAN EXISTS: Show Plan + Chat Interface
             else:
@@ -198,7 +278,16 @@ elif mode == "👥 Group Planner":
                 tab1, tab2 = st.tabs(["📄 Current Itinerary", "💬 Discuss & Modify"])
                 
                 with tab1:
+                    if st.session_state.shared_image:
+                         st.image(
+                            st.session_state.shared_image, 
+                            caption="Group Destination Preview", 
+                            use_container_width=True
+                        )
                     st.markdown(st.session_state.shared_plan)
+                    #show map if exists
+                    if st.session_state.shared_map:
+                        display_map(st.session_state.shared_map)
                 
                 with tab2:
                     st.write("Does this work for everyone? Ask for changes below.")
@@ -212,5 +301,9 @@ elif mode == "👥 Group Planner":
                                 "message": chat_input
                             })
                             if res.status_code == 200:
+                                #update map if changed
+                                data = res.json()
+                                if "map_data" in data:
+                                    st.session_state.shared_map = data["map_data"]
                                 st.toast("Plan Updated!")
                                 st.rerun() # Force refresh to show new plan
