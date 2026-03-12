@@ -138,7 +138,7 @@ if mode == "🤖 Solo Chat":
             if st.session_state.solo_map:
                 display_map(st.session_state.solo_map)
         else:
-            st.info("👈 Use the chat on the right to generate a plan!")
+            st.info("Use the chat on the right to generate a plan!(may take upto 5 min if it's the first time because the model is waking up)")
 
     # RIGHT COLUMN: The Chat
     with col2:
@@ -152,7 +152,7 @@ if mode == "🤖 Solo Chat":
                     st.markdown(message["content"])
 
         # Input is now ALWAYS visible on the right
-        if prompt := st.chat_input("Where to? (e.g. 'Goa for 3 days')"):
+        if prompt := st.chat_input("Where to? (e.g. 'Plan a Trip to Goa for 3 days')"):
             
             # 1. Show User Message
             st.session_state.messages.append({"role": "user", "content": prompt})
